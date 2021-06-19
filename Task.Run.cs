@@ -5,7 +5,7 @@ using Xunit;
 
 namespace DotNetNonSync
 {
-    public class TaskRun
+    public class Task_Run
     {
         // Queues the specified work to run on the thread pool 
         // and returns a Task object that represents that work.
@@ -30,37 +30,47 @@ namespace DotNetNonSync
         [Fact]
         public void Run_WhenItsActionThrows_Wait_PropogatesAnAggregateException()
         {
-            try { 
+            Assert.Throws<AggregateException>(() =>
+            {
                 // Act
-                Task.Run(() => throw new Exception()).Wait();
-            } catch (Exception ex) {
-                // Assert
-                Assert.IsType<AggregateException>(ex);
-            }
+                Task.Run(() => throw new NotImplementedException()).Wait();
+            });
         }
 
         [Fact]
         public async Task Run_WhenItsActionThrows_Await_UnwrapsAggregateException()
         {
-            try {
-                // Act
+            // Assert
+            await Assert.ThrowsAsync<NotImplementedException>(async () => {
                 await Task.Run(() => throw new NotImplementedException());
-            } catch (Exception ex) {
-                // Assert
-                Assert.IsType<NotImplementedException>(ex);
-            }
+            });
         }
 
         [Fact]
         public void Run_WhenItsActionThrows_GetAwaiterGetResult_UnwrapsAggregateException()
         {
-            try {
+            // Assert
+            Assert.Throws<NotImplementedException>(() =>
+            {
                 // Act
                 Task.Run(() => throw new NotImplementedException()).GetAwaiter().GetResult();
-            } catch (Exception ex) {
-                // Assert
-                Assert.IsType<NotImplementedException>(ex);
-            }
+            });
+        }
+
+        [Fact]
+        public async Task Run_WhenCancelledBeforeStarted_ThrowsOnlyWhenAwaited()
+        {
+            var tokenSource = new CancellationTokenSource();
+
+            tokenSource.Cancel();
+
+            await Assert.ThrowsAsync<TaskCanceledException>(async () => {
+                var task = Task.Run(() => { }, tokenSource.Token);
+                await task;
+            });
+
+            // Does not throw when not awaited.
+            Task.Run(() => { }, tokenSource.Token);
         }
     }
 }
