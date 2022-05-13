@@ -5,7 +5,7 @@ using Xunit;
 
 namespace DotNetNonSync
 {
-    public class Task_ctor
+    public class TaskConstructorTests
     {
 
         [Fact]
