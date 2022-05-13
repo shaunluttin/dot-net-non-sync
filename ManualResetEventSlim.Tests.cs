@@ -1,45 +1,72 @@
 using System.Threading;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace DotNetNonSync
 {
-    public class ManualResetEventTests 
+    public class ManualResetEventSlimTests 
     {
-        [Fact]
-        public void Todo() 
+        private readonly ITestOutputHelper _output;
+
+        public ManualResetEventSlimTests(ITestOutputHelper output)
         {
-            // Waiting threads need to 'wait for the signal'.
-            // Non-Singalled blocks waiting threads.
-            // Signalled lets waiting thread to proceed.
-            var mreSlim = new ManualResetEventSlim();
+            _output = output;
+        }
 
-            // What needs disposal? What resources does an MSE Slim use?
-            mreSlim.Dispose();
+        [Theory]
+        [InlineData(11)]
+        [InlineData(12)]
+        public void SetResetWait_WhenTwoThreadsInteract_InterleavesThreads(int maxCalls) 
+        {
+            // Arrange
+            var callCount = -1;
+            var callOrder = new string[maxCalls];
 
-            // Q: What does it mean to be set?
-            // A: To be 'set' means to be 'signalled'.
-            var _0 = mreSlim.IsSet;
+            var mreSlimLettuce = new ManualResetEventSlim();
+            var mreSlimTomato = new ManualResetEventSlim();
 
-            // Q: What does it mean to be reset?
-            // A: Reset sets the state to non-signalled.
-            mreSlim.Reset();
+            // Act
+            new Thread(() => 
+            {
+                mreSlimTomato.Set();
+                mreSlimLettuce.Wait();
 
-            // What does it mean to be set?
-            // A: Reset sets the state to signalled.
-            mreSlim.Set();
+                while(Interlocked.Increment(ref callCount) < maxCalls)
+                {
+                    callOrder[callCount] = $"{callCount} Lettuce: {mreSlimLettuce.IsSet} | {mreSlimTomato.IsSet}";
+                    mreSlimTomato.Set();
+                    mreSlimLettuce.Reset();
+                    mreSlimLettuce.Wait();
+                }
+            })
+            .Start();
 
-            // Q: What does spin count mean?
-            // A: This has something to do with dropping down to the kernal. Why would we want to
-            // control when we drop down to the kernal? What happens before we drop down there?
-            var _1 = mreSlim.SpinCount;
+            mreSlimTomato.Wait();
 
-            // Q: What does Wait do?
-            // A: Blocks the current thread until the MRE state becomes "signalled".
-            mreSlim.Wait();
+            while(Interlocked.Increment(ref callCount) < maxCalls)
+            {
+                callOrder[callCount] = $"{callCount} Tomato: {mreSlimLettuce.IsSet} | {mreSlimTomato.IsSet}";
 
-            // Q: What is a wait handle?
-            // A: Encapsulates OS specific objects that await exlcusive access to shared resources.
-            var _2 = mreSlim.WaitHandle;
+                mreSlimLettuce.Set();
+
+                if (callCount + 1 < maxCalls)
+                { 
+                    mreSlimTomato.Reset();
+                    mreSlimTomato.Wait();
+                }
+            }
+
+            // Assert
+            Assert.DoesNotContain(callOrder, item => item == null);
+
+            for (var i = 0; i < callOrder.Length; ++i) 
+            {
+                if (i % 2 == 0) {
+                    Assert.Contains("Tomato", callOrder[i]);
+                } else { 
+                    Assert.Contains("Lettuce", callOrder[i]);
+                }
+            }
         }
     }
 }
