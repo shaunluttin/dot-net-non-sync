@@ -17,34 +17,62 @@ namespace DotNetNonSync
         }
 
         /// <summary>
-        /// Start (n) threads; ensure that only (m) access the resource at once.
+        /// Start (n) threads; ensure that only (m) threads access the resource at once.
         /// </summary>
         [Theory]
-        [InlineData(10, 20)]
-        public async void Todo(int expecteMaxActive, int totalThreads)
+        [InlineData(5, 15)]
+        public void WaitRelease_WithThreadPressureAndMaxThreads_NeverExceedsMax(int totalThreads, int expectedMaxAccess)
         {
             // Arrange
-            var actualAccessCount = 0;
+            const int sharedAccessDuration = 200;
 
-            var semSlim = new SemaphoreSlim(expecteMaxActive);
+            var sharedAccessCount = 0;
+            var sharedAccessCounts = new int[totalThreads];
+            var remainingAccessCounts = new int[totalThreads];
+
+            var semSlim = new SemaphoreSlim(expectedMaxAccess);
 
             // Act
-            Enumerable.Range(0, totalThreads).Select((i) => new Thread(() =>
+            var threads = Enumerable
+                .Range(0, totalThreads)
+                .Select((index) =>
+                {
+                    var thread = new Thread(() =>
+                    {
+                        semSlim.Wait();
+
+                        sharedAccessCounts[index] = Interlocked.Increment(ref sharedAccessCount);
+                        remainingAccessCounts[index] = semSlim.CurrentCount;
+                        Thread.Sleep(sharedAccessDuration);
+
+                        semSlim.Release();
+
+                        Interlocked.Decrement(ref sharedAccessCount);
+                    });
+
+                    thread.Start();
+
+                    return thread;
+                })
+                // Start all the threads.
+                .ToList();
+
+            // Wait until all the threads complete.
+            foreach (var thread in threads) 
             {
-                semSlim.Wait(); // wait for access
-
-                Interlocked.Increment(ref actualAccessCount);
-
-                semSlim.Release(); // release access
-
-            }))
-            .ToList()
-            .ForEach((t) => t.Start());
-
-            Thread.Sleep(1000);
+                thread.Join();
+            }
 
             // Assert
-            Assert.Equal(totalThreads, actualAccessCount);
+            Assert.All(
+                sharedAccessCounts, 
+                item => Assert.InRange(item, 0, expectedMaxAccess)
+            );
+
+            Assert.All(
+                sharedAccessCounts.Zip(remainingAccessCounts), 
+                item => Assert.Equal(expectedMaxAccess, item.First + item.Second)
+            );
         }
     }
 }
