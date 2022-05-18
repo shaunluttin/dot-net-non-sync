@@ -33,57 +33,68 @@ namespace DotNetNonSync
         /// A: The WaitHandle encapsulates OS specific objects that control access to shared resources.
         /// </remarks>
         [Theory]
-        [InlineData(11)]
-        [InlineData(12)]
+        [InlineData(4)]
+        [InlineData(5)]
         public void SetResetWait_WhenTwoThreadsInteract_InterleavesThreads(int maxCalls)
         {
             // Arrange
             var callCount = -1;
             var callOrder = new string[maxCalls];
 
-            var mreSlimLettuce = new ManualResetEventSlim();
-            var mreSlimTomato = new ManualResetEventSlim();
+            var ping = new ManualResetEventSlim(true);
+            var pong = new ManualResetEventSlim(false);
 
             // Act
-            new Thread(() =>
+            var pingThread = new Thread(() =>
             {
-                mreSlimTomato.Set();
-                mreSlimLettuce.Wait();
+                while(Interlocked.Increment(ref callCount) < maxCalls)
+                {
+                    callOrder[callCount] = $"{callCount} Ping: {pong.IsSet} | {ping.IsSet}";
+
+                    pong.Set(); 
+                    ping.Reset();
+                    ping.Wait();
+                }
+
+                pong.Set();
+            });
+
+            var pongThread = new Thread(() =>
+            {
+                pong.Wait();
 
                 while(Interlocked.Increment(ref callCount) < maxCalls)
                 {
-                    callOrder[callCount] = $"{callCount} Lettuce: {mreSlimLettuce.IsSet} | {mreSlimTomato.IsSet}";
-                    mreSlimTomato.Set();
-                    mreSlimLettuce.Reset();
-                    mreSlimLettuce.Wait();
+                    callOrder[callCount] = $"{callCount} Pong: {pong.IsSet} | {ping.IsSet}";
+
+                    ping.Set();
+                    pong.Reset();
+                    pong.Wait();
                 }
-            })
-            .Start();
 
-            mreSlimTomato.Wait();
+                ping.Set();
+            });
 
-            while(Interlocked.Increment(ref callCount) < maxCalls)
+            pongThread.Start();
+            pingThread.Start();
+
+            // Wait until all the threads complete.
+            foreach (var thread in new [] {pingThread, pongThread}) 
             {
-                callOrder[callCount] = $"{callCount} Tomato: {mreSlimLettuce.IsSet} | {mreSlimTomato.IsSet}";
-
-                mreSlimLettuce.Set();
-
-                if (callCount + 1 < maxCalls)
-                {
-                    mreSlimTomato.Reset();
-                    mreSlimTomato.Wait();
-                }
+                thread.Join();
             }
 
             // Assert
+            _output.WriteLine(string.Join(System.Environment.NewLine, callOrder));
+
             Assert.DoesNotContain(callOrder, item => item == null);
 
             for (var i = 0; i < callOrder.Length; ++i)
             {
                 if (i % 2 == 0) {
-                    Assert.Contains("Tomato", callOrder[i]);
+                    Assert.Contains("Ping", callOrder[i]);
                 } else {
-                    Assert.Contains("Lettuce", callOrder[i]);
+                    Assert.Contains("Pong", callOrder[i]);
                 }
             }
         }
