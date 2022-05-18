@@ -4,11 +4,11 @@ using Xunit.Abstractions;
 
 namespace DotNetNonSync
 {
-    public class ManualResetEventSlimTests
+    public class AutoResetEventTests
     {
         private readonly ITestOutputHelper _output;
 
-        public ManualResetEventSlimTests(ITestOutputHelper output)
+        public AutoResetEventTests(ITestOutputHelper output)
         {
             _output = output;
         }
@@ -16,25 +16,24 @@ namespace DotNetNonSync
         [Theory]
         [InlineData(4)]
         [InlineData(5)]
-        public void SetResetWait_WhenTwoThreadsInteract_InterleavesThreads(int maxCalls)
+        public void SetWait_WhenTwoThreadsInteract_InterleavesThreads(int maxCalls)
         {
             // Arrange
             var callCount = -1;
             var callOrder = new string[maxCalls];
 
-            var ping = new ManualResetEventSlim(true); // Ping goes first.
-            var pong = new ManualResetEventSlim(false);
+            var ping = new AutoResetEvent(true); // Ping goes first.
+            var pong = new AutoResetEvent(false);
 
             // Act
             var pingThread = new Thread(() =>
             {
-                ping.Wait();
+                ping.WaitOne();
                 while(Interlocked.Increment(ref callCount) < maxCalls)
                 {
-                    callOrder[callCount] = $"Ping";
-                    pong.Set(); 
-                    ping.Reset();
-                    ping.Wait();
+                    callOrder[callCount] = "Ping";
+                    pong.Set();
+                    ping.WaitOne();
                 }
 
                 pong.Set();
@@ -42,27 +41,27 @@ namespace DotNetNonSync
 
             var pongThread = new Thread(() =>
             {
-                pong.Wait();
+                pong.WaitOne();
                 while(Interlocked.Increment(ref callCount) < maxCalls)
                 {
                     callOrder[callCount] = "Pong";
                     ping.Set();
-                    pong.Reset();
-                    pong.Wait(); 
+                    pong.WaitOne();
                 }
 
                 ping.Set();
             });
 
+            // Start both threads 
             pongThread.Start();
             pingThread.Start();
 
-            // Wait until all the threads complete.
+            // Wait until both complete.
             pingThread.Join();
             pongThread.Join();
 
             // Assert
-            for (var i = 0; i < callOrder.Length; ++i)
+            for (var i = 0; i < callOrder.Length; ++i) 
             {
                 if (i % 2 == 0) {
                     Assert.Contains("Ping", callOrder[i]);

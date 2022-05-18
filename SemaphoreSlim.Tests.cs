@@ -18,17 +18,21 @@ namespace DotNetNonSync
         /// Start (n) threads; ensure that only (m) threads access the resource at once.
         /// </summary>
         [Theory]
-        [InlineData(5, 15)]
-        public void WaitRelease_WithThreadPressureAndMaxThreads_NeverExceedsMax(int totalThreads, int expectedMaxAccess)
+        [InlineData(1, 10)]
+        [InlineData(2, 10)]
+        [InlineData(4, 10)]
+        [InlineData(8, 10)]
+        [InlineData(16, 10)]
+        [InlineData(32, 10)]
+        [InlineData(64, 10)]
+        [InlineData(128, 10)]
+        public void WaitRelease_WithThreadPressureAndMaxThreads_ReachesButNeverExceedsMax(int totalThreads, int maxAccessCount)
         {
             // Arrange
-            const int sharedAccessDuration = 200;
-
             var sharedAccessCount = 0;
             var sharedAccessCounts = new int[totalThreads];
-            var remainingAccessCounts = new int[totalThreads];
 
-            var semSlim = new SemaphoreSlim(expectedMaxAccess);
+            var semSlim = new SemaphoreSlim(maxAccessCount);
 
             // Act
             var threads = Enumerable
@@ -38,14 +42,14 @@ namespace DotNetNonSync
                     var thread = new Thread(() =>
                     {
                         semSlim.Wait();
-
                         sharedAccessCounts[index] = Interlocked.Increment(ref sharedAccessCount);
-                        remainingAccessCounts[index] = semSlim.CurrentCount;
-                        Thread.Sleep(sharedAccessDuration);
 
-                        semSlim.Release();
+                        // Sleep for long enough to cause the semaphore to wait.
+                        Thread.Sleep(maxAccessCount * 5);
 
                         Interlocked.Decrement(ref sharedAccessCount);
+                        semSlim.Release();
+
                     });
 
                     thread.Start();
@@ -56,21 +60,22 @@ namespace DotNetNonSync
                 .ToList();
 
             // Wait until all the threads complete.
-            foreach (var thread in threads) 
+            foreach (var thread in threads)
             {
                 thread.Join();
             }
 
             // Assert
             Assert.All(
-                sharedAccessCounts, 
-                item => Assert.InRange(item, 0, expectedMaxAccess)
+                sharedAccessCounts,
+                item => Assert.InRange(item, 1, maxAccessCount)
             );
 
-            Assert.All(
-                sharedAccessCounts.Zip(remainingAccessCounts), 
-                item => Assert.Equal(expectedMaxAccess, item.First + item.Second)
-            );
+            if(maxAccessCount <= totalThreads) {
+                Assert.Contains(maxAccessCount, sharedAccessCounts);
+            } else {
+                Assert.Contains(totalThreads, sharedAccessCounts);
+            } 
         }
     }
 }
