@@ -41,15 +41,17 @@ namespace DotNetNonSync
             var callCount = -1;
             var callOrder = new string[maxCalls];
 
-            var ping = new ManualResetEventSlim(true);
+            var ping = new ManualResetEventSlim(true); // Ping goes first.
             var pong = new ManualResetEventSlim(false);
 
             // Act
             var pingThread = new Thread(() =>
             {
+                ping.Wait();
+
                 while(Interlocked.Increment(ref callCount) < maxCalls)
                 {
-                    callOrder[callCount] = $"{callCount} Ping: {pong.IsSet} | {ping.IsSet}";
+                    callOrder[callCount] = $"{callCount} Ping";
 
                     pong.Set(); 
                     ping.Reset();
@@ -65,11 +67,11 @@ namespace DotNetNonSync
 
                 while(Interlocked.Increment(ref callCount) < maxCalls)
                 {
-                    callOrder[callCount] = $"{callCount} Pong: {pong.IsSet} | {ping.IsSet}";
+                    callOrder[callCount] = $"{callCount} Pong";
 
                     ping.Set();
                     pong.Reset();
-                    pong.Wait();
+                    pong.Wait(); 
                 }
 
                 ping.Set();
@@ -79,16 +81,10 @@ namespace DotNetNonSync
             pingThread.Start();
 
             // Wait until all the threads complete.
-            foreach (var thread in new [] {pingThread, pongThread}) 
-            {
-                thread.Join();
-            }
+            pingThread.Join();
+            pongThread.Join();
 
             // Assert
-            _output.WriteLine(string.Join(System.Environment.NewLine, callOrder));
-
-            Assert.DoesNotContain(callOrder, item => item == null);
-
             for (var i = 0; i < callOrder.Length; ++i)
             {
                 if (i % 2 == 0) {
